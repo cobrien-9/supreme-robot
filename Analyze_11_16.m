@@ -130,7 +130,7 @@ dt = minutes(1);
 mt = retime(X,'regular','linear','TimeStep',dt); % SAVED AS cleancarbon_localtime_interpolated.mat
         
 
-%% Shift current velocity data to along-sound and interpolate
+%% Shift 2m current velocity data to along-sound and interpolate
 clearvars
 % drag in 'raw_cur_2m.tsv'
 s=table2array(rawcur2m(:,2:3));
@@ -174,6 +174,69 @@ t.Format=[t.Format ' z'];
 t.TimeZone="America/New_York";
 data=A.Var1;
 A=timetable(t,data); % SAVED AS clean_alongsoundcur_2m_interpolated.mat
+
+%% LOBO currents interpolation (creating 'mc.mat')
+clearvars
+% drag in 'Sensor0052-20230208114311.tsv'
+
+sensor=table2array(Sensor005220230208114311(:,2:91));
+for n=1:30
+    U(1,n)=3+(3*(n-1));E(1,n)=1+(3*(n-1));N(1,n)=2+(3*(n-1));x1(1,n)=0;y1(1,n)=n*(-1);end
+up=sensor(:,U)/10; %velocity vertical (mm/s to cm/s)
+east=sensor(:,E)/10;%(mm/s to cm/s)
+north=sensor(:,N)/10;%(mm/s to cm/s)
+theta_rot=25; % whatever angle you determine from the map 
+rotN=cosd(theta_rot) + sind(theta_rot);
+a = north*rotN; %velocity along-sound 
+
+sizea = size(a);
+numrows = sizea(1);
+numcols = sizea(2);
+threshold = 100;
+for i = 1:numrows 
+    for j = 1:numcols
+        if abs(a(i,j)) > threshold
+            a(i,j) = 0;
+        end 
+        if abs(up(i,j)) > threshold
+            up(i,j) = 0;
+        end       
+    end 
+end 
+
+time=table2array(Sensor005220230208114311(:,1));time=datenum(time);
+for r=1:height(time)
+    x(r,1:30)=x1(1,1:30);y(r,1:30)=y1(1,1:30);
+end
+
+sz=size(x);acuravg=zeros(sz);upcuravg=zeros(sz);
+for h=1:30
+    for j=26:height(time)-25
+    low=j-25;high=j+25;    
+        acuravg(j,h)=mean(a(low:high,h));
+        upcuravg(j,h)=mean(up(low:high,h));
+    end
+end
+
+TT=timetable(Sensor005220230208114311.dateEST,acuravg);
+
+dt = minutes(30);
+mc = retime(TT,'regular','linear','TimeStep',dt); % SAVED AS mc.mat
+
+%% temp and sal interpolation (creating 'lobo_retimed.mat')
+clearvars
+% drag in 'Sensor0052-20230216144947.tsv'
+
+t=table2array(Sensor005220230216144947(:,1));t=datenum(t);
+sal=table2array(Sensor005220230216144947(:,2));
+temp=table2array(Sensor005220230216144947(:,3));
+
+timestamp=datetime(t,'InputFormat','dd.MM.yyyy HH:mm:ss.SSS','ConvertFrom','datenum');
+
+TT=timetable(timestamp,temp,sal);
+
+dt = minutes(30);
+LOBO = retime(TT,'regular','linear','TimeStep',dt);
         
 %% Finding high and low (slack) tide times
 clearvars
@@ -417,6 +480,27 @@ resdata=Residual.res;
 rdata=resdata(ib,:);
 
 tempsalres=table(temperature,salinity,rdata);  % SAVED AS temp_sal_residual.mat
+
+%% biomass versus abs(current velocity 2 m)
+clearvars
+%load clean_alongsoundcur_2m_interpolated.mat
+%load cleancarbon_localtime.mat
+pdata=X.data;
+ptime=X.t;
+ptime=dateshift(ptime, 'start', 'minute', 'nearest'); % Round IFCB data to nearest minute to match minute interpolation in tidal model
+cdata=A.data;
+ctime=A.t;
+
+[C,ia,ib] = intersect(ptime,ctime);
+ % C = ptime(ia,:) and C = ctime(ib,:)
+ t=ptime(ia,:);
+Pdata=pdata(ia,:);
+Cdata=cdata(ib,:);
+
+current_biomass=table(Cdata,Pdata);   % SAVED AS cur_biomass.mat
+
+
+
 
 %% summary timetable (all variables)
 clearvars
